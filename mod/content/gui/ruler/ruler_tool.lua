@@ -565,7 +565,7 @@ local WindowContent = react.RegisterRecipe("ImsvaleRulerWindowContent", function
 				set = function(i) core.setMetric(i) end,
 			},
 			builtin.CheckBox{
-				label = _("Snap to stations, industries and towns"),
+				label = _("Snap"),
 				initialValue = S.snap and 1 or 0,
 				onValueChange = function(value) core.setSnap(value == 1) end,
 			},
