@@ -16,6 +16,14 @@ local function log(fmt, ...)
 end
 core.log = log
 
+-- true logs what snapping finds: each industry's candidate positions when the tool opens, and
+-- every change of snap target
+local DEBUG_SNAP = true
+
+local function fmtP(p)
+	return p and string.format("(%.1f, %.1f, %.1f)", p.x, p.y, p.z or 0) or "-"
+end
+
 core.MODE_LINE, core.MODE_POLY, core.MODE_RADIUS = 1, 2, 3
 core.METRIC_2D, core.METRIC_3D, core.METRIC_TERRAIN = 1, 2, 3
 
@@ -161,6 +169,42 @@ local function nameOf(e)
 	return name
 end
 
+-- An industry's possible "one location", for finding the one the game uses (DEBUG_SNAP): the
+-- INDUSTRY entity's own position and box, and its construction's (Industry.construction)
+-- transform, which the game's celebrations script takes as the industry's position.
+local function logIndustry(e)
+	local parts = { string.format("industry %d %q", e, tostring(nameOf(e))) }
+	local function add(fmt, ...)
+		parts[#parts + 1] = string.format(fmt, ...)
+	end
+	add("entity_util %s", fmtP(positionOf(e)))
+	local b = bboxOf(e)
+	add("box %s", b and string.format("x %.1f..%.1f y %.1f..%.1f (centre %.1f, %.1f)", b.x0, b.x1, b.y0, b.y1,
+		(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2) or "-")
+	local ok, err = pcall(function()
+		local ind = api.engine.getComponent(e, api.type.ComponentType.INDUSTRY)
+		add("stockList %s", tostring(ind.stockList))
+		local c = ind.construction
+		add("construction %s", tostring(c))
+		local viaSub = api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(e)
+		add("forSubconstruction %s", tostring(viaSub))
+		local con = api.engine.getComponent(c, api.type.ComponentType.CONSTRUCTION)
+		if con then
+			local t = con.transf:getTransl()
+			add("construction transl %s", fmtP(t))
+			add("file %s", tostring(con.fileName))
+			add("%d industries, %d subconstructions, %d stations", #con.industries, #con.subconstructions, #con.stations)
+			local cb = bboxOf(c)
+			add("construction box %s", cb and string.format("centre %.1f, %.1f, size %.0f x %.0f", (cb.x0 + cb.x1) / 2,
+				(cb.y0 + cb.y1) / 2, cb.x1 - cb.x0, cb.y1 - cb.y0) or "-")
+		end
+	end)
+	if not ok then
+		add("error %s", tostring(err))
+	end
+	log("snap: %s", table.concat(parts, "; "))
+end
+
 function core.loadTargets()
 	local list, counts = {}, {}
 	local kinds = {
@@ -187,6 +231,9 @@ function core.loadTargets()
 			end
 			if p then
 				list[#list + 1] = { entity = e, kind = k[1], pos = p, bbox = b, name = nameOf(e) }
+				if DEBUG_SNAP and k[1] == "industry" then
+					logIndustry(e)
+				end
 				n = n + 1
 				if b then
 					withBox = withBox + 1
@@ -436,6 +483,8 @@ local function shiftHeld()
 	return held
 end
 
+local lastSnapKey = nil -- DEBUG_SNAP: what was logged last
+
 -- The cursor's point, snapped unless snapping is off or Shift / C is held. Called every frame.
 function core.updateCursor()
 	local raw = nil
@@ -455,6 +504,18 @@ function core.updateCursor()
 			p = copy(target.pos)
 		else
 			p = { x = target.pos.x, y = target.pos.y, z = core.groundZ(target.pos.x, target.pos.y) or target.pos.z }
+		end
+	end
+	-- (a placed point's target is a new table every frame: compare by what it is)
+	local key = target and (target.kind .. ":" .. tostring(target.entity or fmtP(target.pos))) or (raw and "none" or "off")
+	if DEBUG_SNAP and key ~= lastSnapKey then
+		lastSnapKey = key
+		if target then
+			local b = target.bbox
+			log("snap: to %s %s %q at %s%s", target.kind, tostring(target.entity), tostring(target.name),
+				fmtP(p), b and string.format(", box %.0f x %.0f", b.x1 - b.x0, b.y1 - b.y0) or "")
+		elseif raw then
+			log("snap: none at %s", fmtP(raw))
 		end
 	end
 	if not samePoint(p, S.cursor) or target ~= S.snapped then
