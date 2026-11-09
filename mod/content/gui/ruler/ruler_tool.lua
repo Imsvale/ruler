@@ -48,7 +48,6 @@ local COLOR_SNAP = { 0.35, 0.95, 0.45, 1.0 }
 
 local ui = {
 	ctx = nil, -- the ToolStackContext while the tool is on the stack
-	windowPos = nil,
 	windowOpen = false,
 	lastPlace = nil,
 	right = nil, -- the right button down: { t, x, y, drag, cleared }
@@ -580,9 +579,7 @@ local RulerWindow = react.RegisterWrapperRecipe("ImsvaleRulerWindow", builtin.Wi
 		meta = { class = "imsvale-ruler-window" },
 		title = _("Ruler"),
 		closable = true,
-		movable = true,
-		initialX = params.x,
-		initialY = params.y,
+		movable = false, -- placed by its style, as the construction menu's Settings window
 		onClose = function()
 			log("window closed")
 			exitTool()
@@ -598,8 +595,7 @@ local function openWindow()
 		return
 	end
 	wc.removeAllWindows(RulerWindow)
-	local pos = ui.windowPos or {}
-	wc.addSingletonWindow(RulerWindow, { x = pos.x, y = pos.y })
+	wc.addSingletonWindow(RulerWindow, {})
 	ui.windowOpen = true
 end
 
@@ -625,7 +621,6 @@ local definition = {
 	name = TOOL_NAME,
 	push = function(ctx, param)
 		local ok, err = pcall(function()
-			ui.windowPos = param
 			core.start()
 			activate(ctx)
 			log("tool opened")
@@ -683,15 +678,14 @@ local function toolStack()
 	return game_react_globals.getDefaultToolStackApi()
 end
 
--- pos: where the window opens (screen pixels)
-function tool.open(pos)
+function tool.open()
 	ensureRegistered()
 	local ts = toolStack()
 	if not ts then
 		log("no tool stack")
 		return
 	end
-	ts.push(tool.definition, nil, pos or {}, false)
+	ts.push(tool.definition, nil, {}, false)
 end
 
 function tool.close()

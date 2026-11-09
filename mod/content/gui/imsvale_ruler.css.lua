@@ -1,7 +1,7 @@
 local ssu = require "::/gui/main/stylesheetutil.lua"
 
--- The options window (ruler_tool.lua): opened right under the HUD button, so anchored at its top
--- left. The segment labels: a full-screen floating layout, each label centred on its point.
+-- The options window (ruler_tool.lua): at the bottom right, where the construction menu's
+-- Settings window sits (Window!construct-settings in ::/gui/construction/construction.css.lua). The segment labels: a full-screen floating layout, each label centred on its point.
 -- padding / margin: { top, right, bottom, left }.
 
 function data()
@@ -15,7 +15,9 @@ function data()
 	})
 
 	a("Window!imsvale-ruler-window", {
-		anchorPoint = { 0.0, 0.0 },
+		anchorPoint = { 1.0, 1.0 },
+		gravity = { 1.0, 1.0 },
+		margin = { 50, 20, 360, 0 },
 	})
 	a("Window!imsvale-ruler-window Window::Content", {
 		padding = { 4, 12, 10, 12 },
