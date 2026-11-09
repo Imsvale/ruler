@@ -18,7 +18,7 @@ core.log = log
 
 -- true logs what snapping finds: each industry's candidate positions when the tool opens, and
 -- every change of snap target
-local DEBUG_SNAP = true
+local DEBUG_SNAP = false
 
 local function fmtP(p)
 	return p and string.format("(%.1f, %.1f, %.1f)", p.x, p.y, p.z or 0) or "-"
