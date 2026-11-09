@@ -119,4 +119,10 @@ Sixth test (user, 2026-11-09): right hold clears, quick and slow clicks undo onc
 
 **Polylines end at a join** (user, 2026-11-09): in Poly mode, a point snapped to a placed point (other than the polyline's own last one) ends the polyline there. It stays drawn (`S.lines`), and the next click starts another, which may start on a placed point. Undo reopens it. The window's total is the polyline being placed, or the last one ended.
 
+**Industry snapping** (2026-11-09). With DEBUG_SNAP on, a save with forests and saw mills showed:
+- One INDUSTRY entity per industry, its own stock list. `Industry.construction` is the complex (`::/industries/forest/forest.con`, `saw_mill.con`), with 1 industry, 2 to 19 subconstructions and 1 station. The INDUSTRY entity has no NAME.
+- The snap jumped between the industry and the complex's built-in station: a station group named after the industry ("Lostwithiel Saw Mill"), its box inside the industry's, so the smaller box won where they overlap.
+- Candidate points: `entity_util.getPosition` of the industry (its box centre) and the complex's `transf:getTransl()`. They differ by up to 25 m (saw mills); the game's celebrations script takes the latter as the industry's position (to find its nearest town).
+Changed: an industry snaps to its complex's position; the station groups of the complex's stations (`stationGroupSystem.getStationGroup`) aren't targets of their own, and give the industry its name. Whether cargo revenue measures from that point is unconfirmed: `OnCalcTicketPrice` carries a `distance` computed by the engine, which a game script could compare with the candidates.
+
 No game script: nothing needs saving. `severityAdd` / `severityRemove` likely `None` (GUI only), to confirm by adding and removing it.

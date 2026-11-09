@@ -20,33 +20,36 @@ local Button = react.RegisterPluginRecipe(main_mod_button_area.MainModButtonArea
 		end
 	end)
 
-	return builtin.BoxLayout{
+	-- a Component, not a bare BoxLayout: a layout takes no margin
+	return builtin.Component{
 		meta = { class = "imsvale-ruler-button-area" },
-		children = {
-			builtin.ToggleButton{
-				meta = {
-					id = BUTTON_ID,
-					tooltip = _("Ruler"),
-				},
-				value = on:old(),
-				onValueChange = function(value)
-					on:set(value)
-					if value == 1 then
-						-- the window right under the button
-						local pos = nil
-						pcall(function()
-							local p = selfRef:get():getPosition(0.0, 0.0)
-							local size = api.gui.byId.getSize(BUTTON_ID)
-							pos = { x = p.x, y = p.y + size.y }
-						end)
-						tool.open(pos)
-					else
-						tool.close()
-					end
-				end,
-				content = builtin.ImageView{
-					path = "imsvale_ruler::/gui/ruler.tga",
-					scaling = builtin.type.ImageViewScaling.AutoFit,
+		layout = builtin.BoxLayout{
+			children = {
+				builtin.ToggleButton{
+					meta = {
+						id = BUTTON_ID,
+						tooltip = _("Ruler"),
+					},
+					value = on:old(),
+					onValueChange = function(value)
+						on:set(value)
+						if value == 1 then
+							-- the window right under the button
+							local pos = nil
+							pcall(function()
+								local p = selfRef:get():getPosition(0.0, 0.0)
+								local size = api.gui.byId.getSize(BUTTON_ID)
+								pos = { x = p.x, y = p.y + size.y }
+							end)
+							tool.open(pos)
+						else
+							tool.close()
+						end
+					end,
+					content = builtin.ImageView{
+						path = "imsvale_ruler::/gui/ruler.tga",
+						scaling = builtin.type.ImageViewScaling.AutoFit,
+					},
 				},
 			},
 		},

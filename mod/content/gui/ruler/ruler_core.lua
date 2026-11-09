@@ -205,8 +205,32 @@ local function logIndustry(e)
 	log("snap: %s", table.concat(parts, "; "))
 end
 
+-- An industry's complex (Industry.construction): its position (the construction's transform,
+-- which the game's celebrations script takes as the industry's position) and the station groups
+-- of its built-in stations.
+local function industryComplex(e)
+	local pos, groups = nil, {}
+	pcall(function()
+		local ind = api.engine.getComponent(e, api.type.ComponentType.INDUSTRY)
+		local con = api.engine.getComponent(ind.construction, api.type.ComponentType.CONSTRUCTION)
+		local t = con.transf:getTransl()
+		pos = { x = t.x, y = t.y, z = t.z }
+		for _, station in ipairs(con.stations) do
+			local g = api.engine.system.stationGroupSystem.getStationGroup(station)
+			if g and g >= 0 then
+				groups[#groups + 1] = g
+			end
+		end
+	end)
+	return pos, groups
+end
+
+-- Snap targets: towns, industries (one point per industry: its complex's position; its built-in
+-- station counts as part of it, under the industry's box, and lends it its name), and the other
+-- station groups.
 function core.loadTargets()
 	local list, counts = {}, {}
+	local industryOfGroup = {} -- station group -> the industry target it belongs to
 	local kinds = {
 		{ "town", api.type.ComponentType.TOWN },
 		{ "industry", api.type.ComponentType.INDUSTRY },
@@ -222,15 +246,29 @@ function core.loadTargets()
 		if not ok then
 			log("targets: %s failed: %s", k[1], tostring(err))
 		end
-		local n, withBox = 0, 0
+		local n, withBox, folded = 0, 0, 0
 		for _, e in ipairs(entities) do
 			local b = bboxOf(e)
-			local p = positionOf(e)
+			local p = nil
+			local groups = {}
+			if k[1] == "industry" then
+				p, groups = industryComplex(e)
+			end
+			p = p or positionOf(e)
 			if not p and b then
 				p = { x = (b.x0 + b.x1) / 2, y = (b.y0 + b.y1) / 2, z = 0 }
 			end
-			if p then
-				list[#list + 1] = { entity = e, kind = k[1], pos = p, bbox = b, name = nameOf(e) }
+			local industry = k[1] == "station" and industryOfGroup[e] or nil
+			if industry then
+				-- an industry's own station: part of the industry
+				industry.name = industry.name or nameOf(e)
+				folded = folded + 1
+			elseif p then
+				local t = { entity = e, kind = k[1], pos = p, bbox = b, name = nameOf(e) }
+				list[#list + 1] = t
+				for _, g in ipairs(groups) do
+					industryOfGroup[g] = t
+				end
 				if DEBUG_SNAP and k[1] == "industry" then
 					logIndustry(e)
 				end
@@ -240,7 +278,8 @@ function core.loadTargets()
 				end
 			end
 		end
-		counts[#counts + 1] = string.format("%s %d/%d (%d with a box)", k[1], n, #entities, withBox)
+		counts[#counts + 1] = string.format("%s %d/%d (%d with a box%s)", k[1], n, #entities, withBox,
+			folded > 0 and string.format(", %d industry stations in their industries", folded) or "")
 	end
 	S.targets = list
 	log("snap targets: %s", table.concat(counts, ", "))
