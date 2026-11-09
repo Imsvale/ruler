@@ -21,6 +21,7 @@ local Button = react.RegisterPluginRecipe(main_mod_button_area.MainModButtonArea
 	end)
 
 	return builtin.BoxLayout{
+		meta = { class = "imsvale-ruler-button-area" },
 		children = {
 			builtin.ToggleButton{
 				meta = {

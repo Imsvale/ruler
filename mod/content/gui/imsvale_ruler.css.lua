@@ -8,6 +8,12 @@ function data()
 	local result = {}
 	local a = ssu.makeAdder(result)
 
+	-- the HUD button: the mod button area puts the mods' buttons side by side with no space
+	-- between; 2 px each side (path-visualizer's button has the same)
+	a("BoxLayout!imsvale-ruler-button-area", {
+		margin = { 0, 2, 0, 2 },
+	})
+
 	a("Window!imsvale-ruler-window", {
 		anchorPoint = { 0.0, 0.0 },
 	})
