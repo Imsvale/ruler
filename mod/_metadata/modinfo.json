@@ -1,7 +1,6 @@
 {
     "name": "Ruler",
-    "summary": "Measure distances and radii on the map.",
-    "description": "Work in progress.",
+    "summary": "Measure distances",
     "authors": [{ "name": "imsvale", "role": "CREATOR" }],
     "tags": ["Script Mod"],
     "url": ""
