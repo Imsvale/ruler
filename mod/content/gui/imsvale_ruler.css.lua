@@ -1,0 +1,51 @@
+local ssu = require "::/gui/main/stylesheetutil.lua"
+
+-- The options window (ruler_tool.lua): opened right under the HUD button, so anchored at its top
+-- left. The segment labels: a full-screen floating layout, each label centred on its point.
+-- padding / margin: { top, right, bottom, left }.
+
+function data()
+	local result = {}
+	local a = ssu.makeAdder(result)
+
+	a("Window!imsvale-ruler-window", {
+		anchorPoint = { 0.0, 0.0 },
+	})
+	a("Window!imsvale-ruler-window Window::Content", {
+		padding = { 4, 12, 10, 12 },
+	})
+	a("Window!imsvale-ruler-window CheckBox", {
+		margin = { 6, 0, 6, 0 },
+	})
+	a("BoxLayout!imsvale-ruler-row", {
+		margin = { 4, 0, 4, 0 },
+	})
+	a("TextView!imsvale-ruler-row-label", {
+		minSize = { 80, -1 },
+	})
+	a("BoxLayout!imsvale-ruler-result", {
+		margin = { 6, 0, 0, 0 },
+	})
+	a("TextView!imsvale-ruler-result-label", {
+		minSize = { 80, -1 },
+	})
+
+	-- without the gravity the layout collapses at the left edge (road-priority-yield's hover icons)
+	a("FloatingLayout!imsvale-ruler-labels", {
+		gravity = { -1, -1 },
+	})
+	-- road-priority-yield's form of the same rule, in case the class alone doesn't match
+	a("R::ImsvaleRulerOverlay FloatingLayout", {
+		gravity = { -1, -1 },
+	})
+	-- a colour alone draws nothing: it tints the background image (path-visualizer's swatch)
+	a("TextView!imsvale-ruler-label", {
+		anchorPoint = { 0.5, 0.5 },
+		padding = { 1, 5, 1, 5 },
+		backgroundImage1 = { fileName = "::/gui/menu/design/allwhite_main.tga" },
+		backgroundColor1 = { 0.0, 0.0, 0.0, 0.6 },
+		color = { 1.0, 1.0, 1.0, 1.0 },
+	})
+
+	return result
+end
