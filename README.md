@@ -11,3 +11,11 @@ It's a ruler. Use it to measure distances.
 * Terrain: Distance along the terrain.
 
 Snaps to stations, industries, towns, and points placed by the ruler itself.
+
+Right-click to undo placements. Hold right-click to clear all.
+
+### Changelog
+
+**Version 1.1 (2026-11-11)**
+* Cross-tool persistence so you can keep measurements visible while building etc. The Ruler's HUD button gets a popup with buttons to toggle measurement visibility and to clear them.
+* Other small improvements.
