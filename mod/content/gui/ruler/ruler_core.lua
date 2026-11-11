@@ -50,6 +50,7 @@ local S = {
 	mode = core.MODE_LINE,
 	metric = core.METRIC_2D,
 	snap = true,
+	show = true, -- the kept measurements shown in other tools (the eye button)
 	noSnapKey = false, -- C held (constructNoSnap)
 	points = {}, -- the line or polyline being placed
 	lines = {}, -- polylines ended by joining a placed point: { points }
@@ -474,6 +475,9 @@ local function buildView()
 		v.circles[#v.circles + 1] = { o = o, r = dist2(o, p), live = live }
 		v.paths[#v.paths + 1] = { pts = pts, live = live, circle = true }
 		v.markers[#v.markers + 1] = o
+		if not live then
+			v.markers[#v.markers + 1] = p
+		end
 		v.labels[#v.labels + 1] = { p = middle(pts), text = "r " .. core.format(len) }
 		v.radius = len
 	end
@@ -593,6 +597,35 @@ function core.place()
 	core.changed()
 end
 
+-- Ends the line or polyline being placed where it is, kept like a polyline that joined a point:
+-- a mode switch starts the next mode on its own (a radius origin can then snap to the line's last
+-- point), and so does a right-click in Poly mode (a new polyline without closing the current one).
+-- Marked on the op of its last point (the latest point op: later ops are circles). Undoing it takes
+-- that point back and leaves the rest detached (detached), unlike a join, where drawing goes on.
+local function detach()
+	if #S.points == 0 then
+		return false
+	end
+	S.lines[#S.lines + 1] = S.points
+	S.points = {}
+	for i = #S.ops, 1, -1 do
+		if S.ops[i].kind == "point" then
+			S.ops[i].ended = true
+			S.ops[i].detached = true
+			break
+		end
+	end
+	return true
+end
+
+function core.detach()
+	local done = detach()
+	if done then
+		core.changed()
+	end
+	return done
+end
+
 -- takes back the last placement; false if there was none
 function core.undo()
 	local op = table.remove(S.ops)
@@ -600,12 +633,23 @@ function core.undo()
 		return false
 	end
 	if op.kind == "point" then
+		local stayDetached = op.detached or (S.mode ~= core.MODE_LINE and S.mode ~= core.MODE_POLY)
 		if op.ended then
 			S.points = table.remove(S.lines) or {}
 		end
 		table.remove(S.points)
 		if op.replaced then
 			S.points = op.replaced
+		end
+		-- what's left of a detached line stays detached, and so does any outside Line and Poly
+		if stayDetached then
+			detach()
+			-- a kept line down to its first point: that point goes too (its own op, on top now)
+			local line = S.lines[#S.lines]
+			local top = S.ops[#S.ops]
+			if op.ended and line and #line == 1 and top and top.kind == "point" and top.ended then
+				return core.undo()
+			end
 		end
 	elseif op.kind == "origin" then
 		S.origin = nil
@@ -623,6 +667,9 @@ function core.clear()
 end
 
 function core.setMode(mode)
+	if mode ~= S.mode then
+		detach()
+	end
 	S.mode = mode
 	core.changed()
 end
@@ -637,21 +684,28 @@ function core.setSnap(on)
 	core.changed()
 end
 
--- the tool opened / closed: measurements last only while it's open
+function core.hasMeasurements()
+	return #S.points > 0 or #S.lines > 0 or #S.circles > 0 or S.origin ~= nil
+end
+
+-- shown in other tools (the eye button)
+function core.setShow(on)
+	S.show = on
+	core.changed()
+end
+
+-- The tool opened / closed (or shelved under another tool and back). The measurements are kept
+-- until cleared: outside the tool ruler_overlay.lua shows them in whatever tool is active.
 function core.start()
 	S.active = true
-	S.points, S.lines, S.circles, S.origin, S.ops = {}, {}, {}, nil, {}
 	S.cursor, S.snapped, S.noSnapKey = nil, nil, false
-	terrainCache = {}
 	core.loadTargets()
 	core.changed()
 end
 
 function core.stop()
 	S.active = false
-	S.points, S.lines, S.circles, S.origin, S.ops = {}, {}, {}, nil, {}
-	S.cursor, S.snapped, S.targets = nil, nil, nil
-	terrainCache = {}
+	S.cursor, S.snapped, S.noSnapKey, S.targets = nil, nil, false, nil
 	core.changed()
 end
 

@@ -3,10 +3,11 @@
 --
 -- The tool is pushed from the HUD button (ruler_button.script.lua) through the game's default
 -- tool stack, as game.tl pushes the Finance and Company tools. Its push installs the action with
--- the ToolStackContext's setActionFn and opens the window; pop closes the window and forgets the
--- measurements. The action function runs as a recipe: a version counter in its state, checked
--- every step, re-renders it when the measurements change, rebuilding its EdgeRenderable and
--- tooltip (Parallelism's overlay.subscribe does the same).
+-- the ToolStackContext's setActionFn and opens the window; pop closes the window. The
+-- measurements stay until cleared, shown in other tools by ruler_overlay.lua. The drawing itself
+-- (lines, labels) is built there too. The action function runs as a recipe: a version counter
+-- in its state, checked every step, re-renders it when the measurements change, rebuilding its
+-- EdgeRenderable and tooltip (Parallelism's overlay.subscribe does the same).
 --
 -- Mouse: a Selector that hovers nothing; its onProcessMouseEvent places a point on a left press.
 -- Right-click and Escape are both bound to IA_CLOSE_TOPMOST_WINDOW (and others), which would close
@@ -24,6 +25,7 @@ local builtin = ug_require "::/gui/main/builtin.lua"
 local construction_react_util = ug_require "::/gui/construction/construction_react_util.tl"
 local game_react_globals = ug_require "::/gui/main/game_react_globals.tl"
 local core = ug_require "imsvale_ruler::/gui/ruler/ruler_core.lua"
+local overlay = ug_require "imsvale_ruler::/gui/ruler/ruler_overlay.lua"
 
 local S = core.S
 local log = core.log
@@ -32,19 +34,15 @@ local tool = {}
 local TOOL_NAME = "ImsvaleRuler"
 local ACTION_KEY = "imsvale_ruler"
 local HOLD_TO_CLEAR = 1.0 -- seconds
-local DRAG_SLOP = 8 -- pixels the mouse may move with the right button down before it's a camera drag
+-- How far a right-click may drag and still undo: the mouse this many pixels, the camera (eye or
+-- centre) this share of the camera distance. Beyond either, it's a camera drag.
+local DRAG_SLOP = 12
+local CAMERA_SLOP = 0.02
 -- true logs every back action and right-button event (up to BACK_LOG_MAX per tool opening), with
 -- the time since the tool opened: how the input above was worked out
 local DEBUG_INPUT = false
 local BACK_LOG_MAX = 80
 local SAME_INSTANT = 0.004 -- seconds: a back action's press and release this close are a right-click
-
-local COLOR_LINE = { 1.0, 0.82, 0.2, 1.0 }
-local COLOR_LIVE = { 1.0, 0.9, 0.5, 0.85 }
-local COLOR_CIRCLE = { 0.35, 0.8, 1.0, 1.0 }
-local COLOR_CIRCLE_LIVE = { 0.6, 0.9, 1.0, 0.85 }
-local COLOR_MARKER = { 1.0, 1.0, 1.0, 1.0 }
-local COLOR_SNAP = { 0.35, 0.95, 0.45, 1.0 }
 
 local ui = {
 	ctx = nil, -- the ToolStackContext while the tool is on the stack
@@ -59,118 +57,32 @@ local ui = {
 --------------------------------------------------------------------------------
 -- drawing
 
-local function cameraDistance()
-	local d = 500
-	pcall(function()
-		local e, c = api.gui.camera.getEye(), api.gui.camera.getCenter()
-		d = math.sqrt((e.x - c.x) ^ 2 + (e.y - c.y) ^ 2 + (e.z - c.z) ^ 2)
-	end)
-	return d
-end
-
--- line half width for the current zoom (an edge comes out about twice its width)
-local function lineWidth()
-	return math.max(0.1, math.min(40, cameraDistance() * 0.0012))
-end
-
 -- where the camera is, to tell a right-button camera drag from a hold even if the mouse
 -- events stop during the drag
-local function cameraKey()
-	local k = ""
+local function cameraNow()
+	local k = nil
 	pcall(function()
 		local e, c = api.gui.camera.getEye(), api.gui.camera.getCenter()
-		k = string.format("%.1f,%.1f,%.1f,%.1f,%.1f,%.1f", e.x, e.y, e.z, c.x, c.y, c.z)
+		k = { e.x, e.y, e.z, c.x, c.y, c.z }
 	end)
 	return k
 end
 
-local function vec4(c)
-	return api.type.Vec4f.new(c[1], c[2], c[3], c[4])
-end
-
--- a straight piece from a to b (heights linear between them)
-local function straightEdge(a, b, color, width)
-	local len = math.sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2)
-	if len < 0.01 then
-		return nil
+-- the camera has moved since `from` by more than the slop
+local function cameraMoved(from)
+	local now = cameraNow()
+	if not from or not now then
+		return false
 	end
-	local st = api.type.EdgeGeometry.Straight.new()
-	st.pos = { api.type.Vec2f.new(a.x, a.y), api.type.Vec2f.new(b.x, b.y) }
-	local geom = api.type.EdgeGeometry.new()
-	geom.type = api.type.EdgeGeometry.Type.STRAIGHT
-	geom.straight = st
-	geom.height = api.type.Vec2f.new(a.z, b.z)
-	geom.tangent = api.type.Vec2f.new(b.z - a.z, b.z - a.z)
-	geom.length = len
-	geom.width = width
-	local edge = builtin.type.EdgeRenderable.Edge.new(geom)
-	edge.colors = { vec4(color) }
-	edge.width = width
-	edge.offsetZ = 0.5
-	edge.stepSize = math.max(len, 0.1)
-	return edge
-end
-
--- a filled square of half size h at p (one straight piece as wide as half its length)
-local function marker(p, h, color)
-	return straightEdge({ x = p.x - h, y = p.y, z = p.z }, { x = p.x + h, y = p.y, z = p.z }, color, h)
-end
-
--- a level circle around o
-local function circleEdge(o, r, color, width)
-	if r < 0.05 then
-		return nil
-	end
-	local angle = 2 * math.pi + 0.05
-	local arc = api.type.EdgeGeometry.Arc.new()
-	arc.center = api.type.Vec2f.new(o.x, o.y)
-	arc.radius = r
-	arc.startAngle = 0
-	arc.angle = angle
-	local geom = api.type.EdgeGeometry.new()
-	geom.type = api.type.EdgeGeometry.Type.ARC
-	geom.arc = arc
-	geom.height = api.type.Vec2f.new(o.z, o.z)
-	geom.tangent = api.type.Vec2f.new(0, 0)
-	geom.length = r * angle
-	geom.width = width
-	local edge = builtin.type.EdgeRenderable.Edge.new(geom)
-	edge.colors = { vec4(color) }
-	edge.width = width
-	edge.offsetZ = 0.5
-	edge.stepSize = math.max(0.5, 2 * math.pi * r / 128)
-	return edge
-end
-
-local function buildEdges(view)
-	local edges = {}
-	local function add(e)
-		if e then
-			edges[#edges + 1] = e
+	local dist = math.sqrt((from[1] - from[4]) ^ 2 + (from[2] - from[5]) ^ 2 + (from[3] - from[6]) ^ 2)
+	local limit = math.max(dist, 1) * CAMERA_SLOP
+	for i = 0, 3, 3 do
+		local d = math.sqrt((now[i + 1] - from[i + 1]) ^ 2 + (now[i + 2] - from[i + 2]) ^ 2 + (now[i + 3] - from[i + 3]) ^ 2)
+		if d > limit then
+			return true
 		end
 	end
-	local w = lineWidth()
-	for _, path in ipairs(view.paths) do
-		local color
-		if path.circle then
-			color = path.live and COLOR_CIRCLE_LIVE or COLOR_CIRCLE
-		else
-			color = path.live and COLOR_LIVE or COLOR_LINE
-		end
-		for i = 2, #path.pts do
-			add(straightEdge(path.pts[i - 1], path.pts[i], color, w))
-		end
-	end
-	for _, c in ipairs(view.circles) do
-		add(circleEdge(c.o, c.r, c.live and COLOR_CIRCLE_LIVE or COLOR_CIRCLE, w))
-	end
-	for _, p in ipairs(view.markers) do
-		add(marker(p, w * 3, COLOR_MARKER))
-	end
-	if view.snap then
-		add(circleEdge(view.snap, w * 8, COLOR_SNAP, w))
-	end
-	return edges
+	return false
 end
 
 --------------------------------------------------------------------------------
@@ -182,8 +94,13 @@ local function exitTool()
 	end
 end
 
--- a right-click: undo, or leave the tool when nothing's left to undo
+-- a right-click: in Poly mode with a polyline being placed, end it there (the next click starts a
+-- new one); else undo, or leave the tool when nothing's left to undo
 local function backTap()
+	if S.mode == core.MODE_POLY and #S.points > 0 then
+		core.detach()
+		return
+	end
 	if not core.undo() then
 		exitTool()
 	end
@@ -200,7 +117,7 @@ end
 -- the right button went down (from a back action or the mouse event)
 -- (a new press replaces one whose release never came)
 local function rightDown(source)
-	ui.right = { t = core.now(), camera = cameraKey(), drag = false, cleared = false, source = source }
+	ui.right = { t = core.now(), camera = cameraNow(), drag = false, cleared = false, source = source }
 end
 
 -- the right button came up (from the mouse event, or the back action's release)
@@ -218,40 +135,6 @@ end
 
 --------------------------------------------------------------------------------
 -- the overlay: input actions, the per-frame cursor, and the segment labels
-
-local function screenLabels()
-	local view = S.view
-	if not view or #view.labels == 0 then
-		return {}
-	end
-	-- a FloatingLayoutChild's h / v are fractions of the layout (0..1), world2Screen gives pixels
-	local out = {}
-	pcall(function()
-		local size = api.gui.camera.getSize()
-		local w, h = math.max(size.x, 1), math.max(size.y, 1)
-		local eye, center = api.gui.camera.getEye(), api.gui.camera.getCenter()
-		local fx, fy, fz = center.x - eye.x, center.y - eye.y, center.z - eye.z
-		for _, l in ipairs(view.labels) do
-			-- in front of the camera only
-			if (l.p.x - eye.x) * fx + (l.p.y - eye.y) * fy + (l.p.z - eye.z) * fz > 0 then
-				local s = api.gui.camera.world2Screen(api.type.Vec3f.new(l.p.x, l.p.y, l.p.z))
-				local fx, fy = s.x / w, s.y / h
-				if fx >= 0 and fx <= 1 and fy >= 0 and fy <= 1 then
-					out[#out + 1] = { x = fx, y = fy, text = l.text }
-				end
-			end
-		end
-	end)
-	return out
-end
-
-local function labelsKey(labels)
-	local parts = {}
-	for _, l in ipairs(labels) do
-		parts[#parts + 1] = string.format("%.4f,%.4f,%s", l.x, l.y, l.text)
-	end
-	return table.concat(parts, ";")
-end
 
 local Overlay = react.RegisterRecipe("ImsvaleRulerOverlay", function()
 	react.setMouseTransparent(true)
@@ -332,14 +215,14 @@ local Overlay = react.RegisterRecipe("ImsvaleRulerOverlay", function()
 			end
 			core.updateCursor()
 			-- lines are drawn wider zoomed out: redraw when the zoom has changed by a quarter
-			local step = math.floor(math.log(cameraDistance()) / math.log(1.25))
+			local step = overlay.zoomStep()
 			if step ~= ui.zoomStep then
 				ui.zoomStep = step
 				core.changed()
 			end
 			local now = core.now()
 			local r = ui.right
-			if r and not r.drag and r.camera ~= cameraKey() then
+			if r and not r.drag and cameraMoved(r.camera) then
 				r.drag = true
 				backLog("right drag (camera moved)")
 			end
@@ -353,8 +236,8 @@ local Overlay = react.RegisterRecipe("ImsvaleRulerOverlay", function()
 				core.clear()
 			end
 
-			local list = screenLabels()
-			local key = labelsKey(list)
+			local list = overlay.screenLabels(S.view)
+			local key = overlay.labelsKey(list)
 			if key ~= labels:old().key then
 				labels:set({ key = key, list = list })
 			end
@@ -365,22 +248,7 @@ local Overlay = react.RegisterRecipe("ImsvaleRulerOverlay", function()
 		end
 	end)
 
-	local children = {}
-	for i, l in ipairs(labels:old().list) do
-		children[#children + 1] = builtin.FloatingLayoutChild{
-			h = l.x,
-			v = l.y,
-			localKey = "label" .. i,
-			item = builtin.TextView{
-				meta = { class = "imsvale-ruler-label", mouseTransparent = true },
-				text = l.text,
-			},
-		}
-	end
-	return builtin.FloatingLayout{
-		meta = { class = "imsvale-ruler-labels", mouseTransparent = true },
-		children = children,
-	}
+	return overlay.labelsLayout(labels:old().list)
 end)
 
 --------------------------------------------------------------------------------
@@ -463,7 +331,7 @@ local function actionFn()
 		}
 	end
 	if view then
-		local ok, edges = pcall(buildEdges, view)
+		local ok, edges = pcall(overlay.buildEdges, view)
 		if ok and #edges > 0 then
 			children[#children + 1] = builtin.EdgeRenderable{ edges = edges, ignoreDepth = true }
 		elseif not ok then
@@ -640,10 +508,10 @@ local definition = {
 		if shelve then
 			pcall(closeWindow)
 			pcall(function() ctx.setActionFn(nil, nil) end)
-			S.active = false
+			core.stop()
 			log("tool shelved")
 		else
-			S.active = true
+			pcall(core.start)
 			pcall(activate, ctx)
 			log("tool back")
 		end

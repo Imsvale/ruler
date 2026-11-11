@@ -84,6 +84,40 @@ What that raises:
 - **Savegame:** this is GUI state for the session only. Keeping the lines across a save
   reload would need a game script's state, and is not asked for.
 
+## First build (2026-11-11)
+
+- **The HUD buttons** (user's design): with the tool closed and measurements kept, two smaller
+  buttons show below the HUD button. The eye shows or hides the measurements in other tools;
+  the Ruler always shows them to itself. The X clears them. New lines are drawn by opening the
+  Ruler.
+  - Second round, the same day: the buttons now show on hover only, and stay while the mouse
+    is over the button or them, plus 0.4 s. In the first round they sat in the plugin's column,
+    which made the whole button row taller and pushed the other mods' buttons down to its
+    middle. Next they hung below the button as an overflow `FloatingLayoutChild`, the way the
+    layer button shows its key hints. They were drawn there, but got no mouse events outside
+    the button area's rect: no clicks, no hover. Third try: a small window in the game's
+    popover style, opened under the button the way path-visualizer opens its settings.
+- **The overlay:** `ruler_overlay.lua` holds the drawing (moved out of `ruler_tool.lua`), and
+  `lines()` / `subscribe()` / `Labels` serve the other actions.
+- **The wrappers:** `ruler_replace.script.lua` is path-visualizer's wrapper plus one for
+  `FullScreenComponent`. The labels go in as a FullScreenComponent in every action without one
+  (way D below, without merging). Actions that have one show lines only.
+- **Keeping the measurements:** `core.start()` / `stop()` no longer clear them. Shelving
+  (another tool stacked on top) stops the tool the same way, so the measurements show there too.
+- **Module look-up:** the wrappers look up the overlay module on every call, so that after a
+  UI reload they don't keep using the modules loaded before it.
+
+Found while building, which changes the table below:
+- **B is out:** the mod button area is a horizontal `ScrollArea` with the vertical scroll bar
+  off (`main_mod_button_area.tl`), so it clips whatever a plugin draws outside it.
+- **D is less risky than it looked:** in the game's own code only the town window's layer
+  legend (`town.tl:1095`) puts a FullScreenComponent in an action. `FullScreenComponent` is a
+  builtin like `EdgeRenderable`, so `ReplaceRecipe` can wrap it to spot one being built.
+- **A screen position is readable after all:** a node's screen position, as fractions, is
+  `ref:get():getPosition(gx, gy)`, which `callout_container.tl` uses.
+- **Pop-up height unknown:** whether the pop-up buttons get cut off by the scroll area's height
+  is to be seen in game.
+
 ## Labels: no proven way yet
 
 The labels are a 2D layer (a `FloatingLayout` placed by `world2Screen` every step) mounted
