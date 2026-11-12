@@ -16,6 +16,10 @@ Right-click to undo placements. Hold right-click to clear all.
 
 ### Changelog
 
+**Version 1.2 (2026-11-12)**
+* Translations: German, Spanish, French, Italian, Dutch, Polish, Russian, Brazilian Portuguese, Japanese, Korean, Chinese (simplified and traditional).
+* Lengths use the decimal symbol of the game's language.
+
 **Version 1.1 (2026-11-11)**
 * Cross-tool persistence so you can keep measurements visible while building etc. The Ruler's HUD button gets a popup with buttons to toggle measurement visibility and to clear them.
 * Other small improvements.
