@@ -110,14 +110,27 @@ local function isImperial()
 	return imperial
 end
 
--- 1234567 -> "1 234 567"
-local function grouped(n)
-	local s = tostring(n)
-	local out = s:reverse():gsub("(%d%d%d)", "%1 "):reverse()
-	return (out:gsub("^ ", ""))
+-- A number with the given decimals, written as the game's language writes numbers (decimal
+-- symbol, digit grouping): the engine's own formatter, which the game's lang_util.formatNumber
+-- wraps (scripts/lang_util.tl in the game's scripts.zip). Without it: a point, and digits
+-- grouped by spaces ("1 234.5").
+local function number(value, decimals)
+	local s = nil
+	pcall(function() s = api.util.lang.formatNumber(value, decimals) end)
+	if type(s) == "string" and s ~= "" then
+		return s
+	end
+	local scale = 10 ^ decimals
+	local n = math.floor(value * scale + 0.5)
+	local whole = tostring(math.floor(n / scale)):reverse():gsub("(%d%d%d)", "%1 "):reverse():gsub("^ ", "")
+	if decimals == 0 then
+		return whole
+	end
+	return string.format("%s.%0" .. decimals .. "d", whole, n % scale)
 end
 
--- one decimal, digits grouped: "1 234.5 m"; imperial: feet, or miles from a mile up
+-- one decimal: "1 234.5 m" (or "1.234,5 m" and so on, by the game's language); imperial: feet,
+-- or miles (three decimals) from a mile up
 function core.format(metres)
 	if metres == nil then
 		return ""
@@ -126,11 +139,10 @@ function core.format(metres)
 	if isImperial() then
 		value, unit = metres / 0.3048, "ft"
 		if value >= 5280 then
-			return string.format("%.3f mi", value / 5280)
+			return number(value / 5280, 3) .. " mi"
 		end
 	end
-	local tenths = math.floor(value * 10 + 0.5)
-	return string.format("%s.%d %s", grouped(math.floor(tenths / 10)), tenths % 10, unit)
+	return number(value, 1) .. " " .. unit
 end
 
 --------------------------------------------------------------------------------
